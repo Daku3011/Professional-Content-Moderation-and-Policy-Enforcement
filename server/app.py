@@ -60,7 +60,11 @@ async def web_step(data: dict):
         "done": obs.done
     }
 
-from fastapi.responses import HTMLResponse  # type: ignore # noqa: E402
+from fastapi.responses import HTMLResponse, RedirectResponse  # type: ignore # noqa: E402
+
+@app.get("/")
+def root_redirect():
+    return RedirectResponse(url="/web")
 
 @app.get("/web", response_class=HTMLResponse)
 def web_ui():
@@ -283,7 +287,7 @@ def web_ui():
 def main():
     """Main entrypoint for running the server directly."""
     import uvicorn # type: ignore
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=7860)
 
 if __name__ == "__main__":
     main()
