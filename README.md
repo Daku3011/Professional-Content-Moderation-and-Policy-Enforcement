@@ -11,101 +11,141 @@ license: apache-2.0
 
 # Professional Content Moderation & Policy Enforcement (PCMPE)
 
-<div align="center">
-  <p><strong>A high-fidelity OpenEnv reinforcement learning environment for automated content moderation.</strong></p>
-</div>
-
-
-Welcome to **PCMPE**, a real-world task simulation designed for the OpenEnv framework. This environment evaluates an AI agent's ability to act as a **Content Moderator**, enforcing platform policies across a variety of user-generated content scenarios, from simple spam filtering to nuanced hate speech detection and misinformation triage.
+A high‑fidelity **OpenEnv** reinforcement‑learning environment that simulates a real‑world content moderation pipeline.  Judges can evaluate an AI agent’s ability to:
+- **Classify** content as `ALLOW`, `DELETE`, or `ESCALATE` based on policy guidelines.
+- **Provide rationales** for each decision, which are scored for quality.
+- **Interact** with a premium, glass‑morphic web UI (`/web`).
 
 ---
 
-## 🖼️ Dashboard Preview
-The environment includes a premium, glassmorphic **Moderator Console** (available at `/web`) for manual testing and real-time monitoring of agent decisions.
+## 📐 Architecture Overview
 
-- **Real-time Queue**: Watch items flow through the moderation pipeline.
-- **Policy Context**: Agents are provided with relevant policy snippets for every decision.
-- **Rationale Analysis**: Rewards are based not just on the decision (ALLOW/DELETE/ESCALATE), but also on the quality of the reasoning.
+```mermaid
+flowchart TD
+    subgraph Server[FastAPI Server]
+        A[moderation_env.py] --> B[app.py (Web UI)]
+        B --> C[Endpoints: /web/reset, /web/step]
+    end
+    subgraph Agent[BrowserGym Agent]
+        D[inference.py] --> E[BrowserGymEnv (Docker image)]
+        E --> F[Web UI Interaction]
+    end
+    subgraph Grader[Programmatic Grader]
+        G[grader.py] --> A
+    end
+    Server -->|Serves UI| Agent
+    Server -->|Provides observations| Grader
+```
 
----
-
-## 🏆 Environment Design
-
-### ⚡ The Moderation Protocol
-Every action (`ModerationAction`) requires:
-1.  **Decision**: `ALLOW`, `DELETE`, or `ESCALATE`.
-2.  **Rationale**: A textual explanation justifying the choice based on the active policy.
-
-### 🧪 Task Levels & Difficulty
-
-| Level | Name | Description | Dataset Size |
-|:------|:-----|:------------|:-------------|
-| **1 (Easy)** | Filter & Spam | Obvious profanity and commercial spam. | 5 Items |
-| **2 (Medium)** | Policy Enforcement | Nuanced hate speech vs political criticism. | 5 Items |
-| **3 (Hard)** | Complex Triage | Misinformation, self-harm, and deepfakes. | 5 Items |
-
-### 💰 Reward Function
-- **Correct Decision**: `+10 points`
-- **Incorrect Decision**: `-15 points` (High penalty for moderation failure)
-- **High-Quality Rationale**: `+2 to +5 points` (Bonus for length and keyword matches)
+- **`moderation_env.py`** – Core environment implementing the moderation task, reward logic, and data loading.
+- **`app.py`** – FastAPI wrapper exposing the UI and HTTP endpoints.  Buttons now have stable IDs (`btn-allow`, `btn-delete`, `btn-escalate`) and the rationale textarea (`rationale-input`).
+- **`inference.py`** – **BrowserGym‑compliant** inference script required by the hackathon.  It drives a browser instance, reads the UI state, fills the rationale, and clicks the appropriate button using the OpenAI client.
+- **`grader.py`** – Evaluates any agent (including the baseline `GroundTruthAgent`) and reports a normalized score between 0.0 and 1.0.
+- **`models.py`** – Pydantic models for actions, observations, and decisions.
 
 ---
 
 ## 🚀 Getting Started
 
-### 1. Run the Environment Server
-PCMPE is a standard FastAPI-based OpenEnv environment.
-```bash
-uv run server
-```
-Visit **`http://localhost:8000/web`** to access the interactive console.
+### Prerequisites
+- **Python 3.10+** (managed with `uv`).
+- **Docker** (for the BrowserGym environment).  The inference script expects the Docker image `browsergym-env:latest`.
+- **OpenAI / HuggingFace API key** (set as `HF_TOKEN`).
+- Optional but recommended for the submission script: `browsergym` and `playwright` Python packages.
 
-### 2. Run the Programmatic Grader
-Benchmark the environment logic and baseline performance:
+### Installation
 ```bash
-python3 grader.py
-```
+# Clone the repository (already done)
+cd treasure_env
 
-### 3. Run the LLM Baseline (Submission Schema)
-To produce a reproducible score using an LLM agent, run the submission-compliant `inference.py` script. This script uses the standard OpenAI SDK but is compatible with any OpenAI-compliant provider (like Google Gemini).
-
-#### Configure Environment:
-```bash
-export API_BASE_URL="https://api.openai.com/v1"      # Or Gemini endpoint
-export MODEL_NAME="gpt-4o-mini"                        # Or gemini-1.5-flash
-export HF_TOKEN="your-api-key"                         # Your API Key (used as HF_TOKEN)
+# Install dependencies via uv (or pip)
+uv pip install -r requirements.txt   # requirements.txt includes openai, numpy, pillow, etc.
+# Or directly from pyproject.toml
+uv pip install .
 ```
 
-#### Execute Inference:
+### Running the Environment Server
 ```bash
-# This environment uses BrowserGym for high-fidelity evaluation.
-# Ensure the server is running (uv run server) before executing inference.
-# You will also need the 'browsergym' and 'playwright' packages.
+uv run server   # Starts FastAPI on http://0.0.0.0:7860
+```
+Open a browser and navigate to **`http://localhost:7860/web`** to explore the moderator console.
 
-export API_BASE_URL="https://router.huggingface.co/v1" 
-export MODEL_NAME="gpt-4o"
-export HF_TOKEN="your-huggingface-token"
+---
 
+## 📊 Evaluation & Scoring
+
+### Reward Function (per step)
+- **Correct decision**: +10 points
+- **Incorrect decision**: ‑15 points (high penalty)
+- **Rationale length bonus**: +2 points if > 5 words
+- **Keyword matches**: +1.5 points per matching keyword from the item’s metadata
+
+The environment accumulates a **cumulative reward** and reports it as `current_score`.  The grader normalises the total reward to a 0‑1 score:
+```
+norm_score = (total_reward - min_possible) / (max_possible - min_possible)
+```
+Judges will run `python3 grader.py` after the agent finishes to obtain the final normalized score.
+
+---
+
+## 🤖 Running the Submission‑Compliant Inference Script
+The hackathon mandates a **BrowserGym** agent.  The provided `inference.py` follows the required template:
+
+1. **Set environment variables** (replace with your own keys):
+```bash
+export API_BASE_URL="https://router.huggingface.co/v1"
+export MODEL_NAME="gpt-4o"          # or any OpenAI‑compatible model
+export HF_TOKEN="your-hf-token"
+```
+2. **Start the server** (if not already running):
+```bash
+uv run server &
+```
+3. **Run the inference script**:
+```bash
 python3 inference.py
 ```
-*Note: The script is designed to interact directly with the Web UI at `/web` to simulate human moderation workflow.*
+The script will:
+- Reset the environment via `/web/reset`.
+- At each step, build a prompt containing the goal, current URL, policy, content, and clickable element IDs.
+- Call the LLM via the OpenAI SDK.
+- Parse the LLM response into a BrowserGym action (e.g., `fill('rationale-input', '...')` then `click('btn-delete')`).
+- Submit the action to the environment and repeat until the episode ends.
+
+> **Note**: If `HF_TOKEN` is missing, the script falls back to a deterministic heuristic for local validation.
 
 ---
 
-## 📦 Containerization & Deployment
-This environment is designed to be deployed as a **Hugging Face Space**.
-- **Base OS**: Linux (Ubuntu 22.04)
-- **Runtime**: Python 3.10+ (via `uv`)
-- **Container**: `Dockerfile` included for standard build/run.
-
+## 📦 Deployment to Hugging Face Spaces
+The repository is already configured for Space deployment:
 ```bash
-docker build -t moderation_env .
-docker run -p 8000:8000 moderation_env
+# From the repository root
+git push huggingface main   # or the appropriate branch
 ```
+The `Dockerfile` builds the FastAPI server; the Space will expose the UI at `https://<your‑space>.hf.space/web`.
+Make sure the environment variables are added in the Space settings under **Secrets**.
 
 ---
 
-<div align="center">
-  <i>Part of the Meta OpenEnv Competition &middot; Engineering the future of Agentic Safety</i> <br />
-  <strong>Developed by Dwarkesh 🚀</strong>
-</div>
+## 🛠️ Dependencies
+```toml
+# pyproject.toml (relevant entries)
+openenv-core[core] >= 0.2.1
+numpy >= 1.24.0
+pillow >= 10.0.0
+openai >= 1.0.0
+# BrowserGym is required for the submission script (install locally for testing)
+# browsergym-env >= 0.1.0   (optional – only needed for inference.py)
+```
+All other runtime dependencies are listed in `requirements.txt`.
+
+---
+
+## 🐞 Troubleshooting
+- **Port 7860 already in use** – Stop any existing server (`pkill -f uvicorn`) or change `app_port` in the front‑matter.
+- **Missing API key** – The script will warn and use the heuristic fallback; set `HF_TOKEN` to avoid this.
+- **Docker image not found** – Pull it manually: `docker pull ghcr.io/meta/browsergym-env:latest`.
+- **`browsergym` import errors** – Install with `pip install browsergym-env` and ensure `playwright` browsers are installed (`playwright install`).
+
+---
+
