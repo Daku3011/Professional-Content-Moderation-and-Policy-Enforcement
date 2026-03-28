@@ -3,3 +3,7 @@ pydantic>=2.0.0
 uvicorn>=0.20.0
 openai>=1.0.0
 fastapi>=0.115.0
+browsergym-env>=0.1.0
+playwright>=1.35.0
+numpy>=1.24.0
+pillow>=10.0.0

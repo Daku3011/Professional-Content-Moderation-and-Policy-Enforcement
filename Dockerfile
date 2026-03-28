@@ -11,9 +11,10 @@ WORKDIR /app
 # Install system dependencies if any (none needed for this env)
 # RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 
-# Copy and install Python dependencies
 COPY --chown=user ./requirements.txt requirements.txt
 RUN pip install --no-cache-dir --upgrade -r requirements.txt
+# Install Playwright browsers
+RUN python -m playwright install
 
 # Copy the rest of the application
 COPY --chown=user . /app
