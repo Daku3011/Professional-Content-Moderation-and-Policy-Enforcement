@@ -14,11 +14,15 @@ except ImportError:
     pass
 
 try:
-    from models import ModerationAction, ModerationObservation
+    from ..models import ModerationAction, ModerationObservation
     from .moderation_env import ContentModerationEnv
 except (ImportError, ValueError):
-    from models import ModerationAction, ModerationObservation # type: ignore
-    from server.moderation_env import ContentModerationEnv
+    try:
+        from models import ModerationAction, ModerationObservation
+        from moderation_env import ContentModerationEnv
+    except (ImportError, ValueError):
+        from models import ModerationAction, ModerationObservation # type: ignore
+        from server.moderation_env import ContentModerationEnv
 
 app = create_app(
     ContentModerationEnv,
