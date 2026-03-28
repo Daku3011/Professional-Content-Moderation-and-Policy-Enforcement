@@ -22,9 +22,19 @@ class ContentModerationEnv(Environment):
     An environment for training and evaluating content moderation agents.
     Agents must review content items and decide whether to ALLOW, DELETE, or ESCALATE.
     """
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super(ContentModerationEnv, cls).__new__(cls)
+        return cls._instance
 
     def __init__(self):
+        # Only initialize once if it's a singleton
+        if hasattr(self, '_initialized') and self._initialized:
+            return
         super().__init__()
+        self._initialized = True
         self.level = 1
         self.queue: List[Dict[str, Any]] = []
         self.policy = ""

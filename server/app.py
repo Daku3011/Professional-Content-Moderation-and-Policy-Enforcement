@@ -30,6 +30,7 @@ except (ImportError, ValueError):
     try:
         # Fallback for local direct execution
         from moderation_env import ContentModerationEnv
+
         sys.path.append(str(Path(__file__).parent))
         from models import ModerationAction, ModerationObservation
     except (ImportError, ValueError):
@@ -53,55 +54,51 @@ app = create_app(
     max_concurrent_envs=1,
 )
 
-# Stateful backend for the custom Web UI (separate from Gradio /web)
-# This allows the custom premium UI to have its own session state
-web_env = ContentModerationEnv()
+# Shared backend for both Grader and Web UI (singleton-safe)
+env_instance = ContentModerationEnv()
 
-@app.post("/web/reset")
+
+@app.post("/dashboard/reset")
 async def web_reset(data: dict):
     try:
         level = int(data.get("level", 1))
     except (ValueError, TypeError):
         level = 1
-        
-    obs = web_env.reset(level=level)
-    return {
-        "observation": obs.model_dump(),
-        "reward": 0.0,
-        "done": False,
-        "backend_v": "2.0"
-    }
 
-@app.post("/web/step")
+    obs = env_instance.reset(level=level)
+    return {"observation": obs.model_dump(), "reward": 0.0, "done": False}
+
+
+@app.post("/dashboard/step")
 async def web_step(data: dict):
     action_data = data.get("action", {})
     decision = action_data.get("decision", "ALLOW")
-    rationale = action_data.get("rationale", "Automated moderation review.")
-    
+    rationale = action_data.get("rationale", "Human-in-the-loop review.")
+
     action = ModerationAction(decision=decision, rationale=rationale)
-    obs = web_env.step(action)
+    obs = env_instance.step(action)
+    return {"observation": obs.model_dump(), "reward": obs.reward, "done": obs.done}
+
+
+@app.get("/dashboard/state")
+async def web_state():
+    # Return the current observation from the shared env
+    obs = env_instance.state.custom_data  # Or just use the state property
     return {
-        "observation": obs.model_dump(),
-        "reward": obs.reward,
-        "done": obs.done
+        "observation": env_instance._get_observation(
+            reward=0.0, done=False
+        ).model_dump(),
+        "reward": 0.0,
+        "done": False,
     }
 
-@app.get("/web/state")
-async def web_state():
-    # Return the current observation from the web_env
-    is_done = web_env.current_index >= len(web_env.queue)
-    obs = web_env._get_observation(reward=0.0, done=is_done)
-    return {
-        "observation": obs.model_dump(),
-        "reward": 0.0,
-        "done": is_done
-    }
 
 # Override the default health check to satisfy custom grader requirements
 # We do this by inserting it at the beginning of the routes list
 @app.get("/health", tags=["Health"], include_in_schema=False)
 async def custom_health():
     return {"status": "ok", "app": "pcmpe"}
+
 
 # Helper to move the custom health check to the front so it takes precedence
 for i, route in enumerate(app.routes):
@@ -111,16 +108,19 @@ for i, route in enumerate(app.routes):
             app.routes.insert(0, app.routes.pop(i))
             break
 
+
 @app.get("/", response_class=HTMLResponse)
 def root_redirect():
-    # Redirect or serve the premium UI
-    return web_ui()
-
-@app.get("/web", response_class=HTMLResponse)
-def web_ui():
-    # This is the premium custom UI
-    from fastapi.responses import HTMLResponse
     return HTMLResponse(content=HTML_CONTENT)
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard_ui():
+    """This is the premium custom dashboard."""
+    from fastapi.responses import HTMLResponse
+
+    return HTMLResponse(content=HTML_CONTENT)
+
 
 HTML_CONTENT = """<!DOCTYPE html>
 <html class="dark" lang="en"><head>
@@ -222,7 +222,7 @@ HTML_CONTENT = """<!DOCTYPE html>
             btn.style.borderColor = i === level ? '#00f1fe' : 'transparent';
         });
 
-        const res = await fetch('/web/reset', {
+        const res = await fetch('/dashboard/reset', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({level})
@@ -238,7 +238,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         if(!rationale) { alert('Rationale required.'); return; }
 
         isProcessing = true;
-        const res = await fetch('/web/step', {
+        const res = await fetch('/dashboard/step', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ action: { decision, rationale } })
@@ -265,4 +265,5 @@ HTML_CONTENT = """<!DOCTYPE html>
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=7860)
