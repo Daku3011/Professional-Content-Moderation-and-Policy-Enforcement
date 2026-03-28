@@ -75,6 +75,10 @@ async def web_state():
         "done": is_done
     }
 
+@app.get("/health")
+async def health():
+    return {"status": "ok", "app": "pcmpe"}
+
 from fastapi.responses import HTMLResponse  # type: ignore # noqa: E402
 
 @app.get("/", response_class=HTMLResponse)

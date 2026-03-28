@@ -13,8 +13,7 @@ WORKDIR /app
 
 COPY --chown=user ./requirements.txt requirements.txt
 RUN pip install --no-cache-dir --upgrade -r requirements.txt
-# Install Playwright browsers
-RUN python -m playwright install
+# No playwright install here (slows down server build)
 
 # Copy the rest of the application
 COPY --chown=user . /app
